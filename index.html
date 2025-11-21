@@ -15,7 +15,7 @@
       margin-bottom: 5px;
       color: #1a1a1a;
     }
-    #last-updated {
+    #updated {
       font-size: 0.95rem;
       color: #555;
       margin-bottom: 20px;
@@ -73,7 +73,7 @@
   </table>
 
 <script>
-  // YOUR GOOGLE SHEETS PUBLISHED CSV URL (replace this!)
+  // YOUR GOOGLE SHEETS PUBLISHED CSV URL
   const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vScqD__mUDS5xvRn7bj7njLOUcqYKEo3MHLjOSsOIv0wTh2GFvTXOcLl_34w6PirksSafr2u5Unj1IF/pub?gid=0&single=true&output=csv";
 
   // Super aggressive cache buster
@@ -129,18 +129,21 @@
     const headerRow = document.getElementById("header-row");
     const bodyRows = document.getElementById("body-rows");
 
-    try {
-      updatedEl.textContent = "Fetching latest data...";
-      updatedEl.className = "";
+    updatedEl.textContent = "Fetching latest data...";
+    updatedEl.className = "";
 
+    try {
       const response = await fetch(getFreshUrl(), {
         method: 'GET',
-        cache: 'no-store',           // Prevent browser cache
-        'no-cache',             // Prevent proxy cache
-        'must-revalidate'
+        cache: 'no-store', // Prevent browser cache
+        headers: {
+          'Cache-Control': 'no-cache, must-revalidate' // Prevent proxy/CDN cache
+        }
       });
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
       const csvText = await response.text();
       const rows = parseCSV(csvText);
@@ -186,6 +189,11 @@
         });
 
         bodyRows.appendChild(tr);
+      }
+
+      // Remove loading row if still present
+      if (loadingEl) {
+        loadingEl.remove();
       }
 
       // Success update
