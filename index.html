@@ -3,74 +3,268 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>College Rank List (Live)</title>
+  <title>College Rank Slideshow (Live)</title>
   <style>
     body {
       font-family: 'Segoe UI', Arial, sans-serif;
       padding: 20px;
-      background: #f5f7fb;
+      background: radial-gradient(circle at top left, #e0ecff, #f5f7fb);
       margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
     }
+
     h1 {
-      margin-bottom: 5px;
+      margin: 10px 0 4px;
       color: #1a1a1a;
+      text-align: center;
     }
+
     #updated {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       color: #555;
       margin-bottom: 20px;
       font-weight: 500;
+      text-align: center;
     }
+
     #loading {
       color: #0066cc;
       font-style: italic;
+      text-align: center;
+      margin-top: 40px;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: white;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    th, td {
-      padding: 12px 14px;
-      text-align: left;
-      border-bottom: 1px solid #eee;
-    }
-    th {
-      background: #eef2ff;
-      font-weight: 600;
-      color: #333;
-      position: sticky;
-      top: 0;
-    }
-    tr:nth-child(even) td {
-      background: #fafbff;
-    }
-    tr:hover td {
-      background: #f0f7ff;
-    }
-    .rank-1 { background: #fff7d6 !important; font-weight: bold; }
-    .rank-2 { background: #e6f7ff !important; }
-    .rank-3 { background: #f3e8ff !important; }
+
     .error {
       color: #d32f2f;
       font-weight: bold;
+      text-align: center;
+    }
+
+    /* Slideshow layout */
+
+    .slideshow-container {
+      position: relative;
+      max-width: 900px;
+      width: 100%;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .slide-card {
+      width: 100%;
+      max-width: 800px;
+      background: white;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.12);
+      border-radius: 18px;
+      padding: 26px 28px 22px;
+      box-sizing: border-box;
+      display: none; /* shown via JS */
+      transform-origin: center;
+      transition: transform 0.4s ease, box-shadow 0.4s ease, opacity 0.4s ease;
+      opacity: 0;
+    }
+
+    .slide-card.active {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .slide-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 16px;
+    }
+
+    .rank-pill {
+      font-size: 2.8rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffcc33, #ff9d00);
+      -webkit-background-clip: text;
+      color: transparent;
+      text-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    }
+
+    .rank-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #888;
+      font-weight: 600;
+    }
+
+    .college-name {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #222;
+      margin-bottom: 4px;
+    }
+
+    .location-line {
+      font-size: 0.95rem;
+      color: #666;
+    }
+
+    .tag-row {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag-pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #eef2ff;
+      color: #3949ab;
+      border: 1px solid #d0d7ff;
+    }
+
+    .score-box {
+      margin-top: 18px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: #f5fbff;
+      border: 1px solid #cfe8ff;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .score-label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #4a6fa5;
+      font-weight: 600;
+    }
+
+    .score-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #174ea6;
+    }
+
+    /* Controls */
+
+    .controls {
+      margin-top: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      border: none;
+      outline: none;
+      padding: 8px 18px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2962ff, #3d5afe);
+      color: #fff;
+    }
+
+    .btn-icon {
+      font-size: 1rem;
+    }
+
+    .dots {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      max-width: 240px;
+      justify-content: center;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #cfd8dc;
+      transition: width 0.2s ease, background 0.2s ease;
+    }
+
+    .dot.active {
+      width: 18px;
+      background: #2962ff;
+    }
+
+    .slide-count {
+      font-size: 0.8rem;
+      color: #555;
+      font-weight: 500;
+    }
+
+    @media (max-width: 600px) {
+      .slide-card {
+        padding: 18px 16px 16px;
+      }
+      .rank-pill {
+        font-size: 2.2rem;
+      }
+      .college-name {
+        font-size: 1.3rem;
+      }
     }
   </style>
 </head>
 <body>
 
-  <h1>College Rank List (Live Update)</h1>
+  <h1>College Rank List – Slide View</h1>
   <div id="updated">Loading live data...</div>
 
-  <table id="rank-table">
-    <thead><tr id="header-row"></tr></thead>
-    <tbody id="body-rows">
-      <tr><td colspan="10" id="loading">Fetching latest rankings...</td></tr>
-    </tbody>
-  </table>
+  <div class="slideshow-container">
+    <div id="loading">Fetching latest rankings...</div>
+
+    <!-- Slide cards will be injected here -->
+    <div id="slides-wrapper"></div>
+  </div>
+
+  <div class="controls" id="controls" style="display:none;">
+    <button class="btn" id="prev-btn">
+      <span class="btn-icon">⟵</span> Prev
+    </button>
+    <div class="dots" id="dots"></div>
+    <button class="btn btn-primary" id="next-btn">
+      Next <span class="btn-icon">⟶</span>
+    </button>
+    <div class="slide-count" id="slide-count"></div>
+  </div>
 
 <script>
   // YOUR GOOGLE SHEETS PUBLISHED CSV URL
@@ -123,21 +317,134 @@
     return rows;
   }
 
-  async function fetchAndRender() {
-    const updatedEl = document.getElementById("updated");
-    const loadingEl = document.getElementById("loading");
-    const headerRow = document.getElementById("header-row");
-    const bodyRows = document.getElementById("body-rows");
+  // Normalize header names to match: rank, college_name, city, state, category, score
+  function normalizeHeader(h) {
+    return h.toLowerCase().trim().replace(/\s+/g, "_");
+  }
 
+  const updatedEl = document.getElementById("updated");
+  const loadingEl = document.getElementById("loading");
+  const slidesWrapper = document.getElementById("slides-wrapper");
+  const controlsEl = document.getElementById("controls");
+  const dotsEl = document.getElementById("dots");
+  const slideCountEl = document.getElementById("slide-count");
+  const prevBtn = document.getElementById("prev-btn");
+  const nextBtn = document.getElementById("next-btn");
+
+  let colleges = [];  // { rank, college_name, city, state, category, score }
+  let currentIndex = 0;
+  let autoTimer = null;
+
+  function buildSlides() {
+    slidesWrapper.innerHTML = "";
+    dotsEl.innerHTML = "";
+
+    if (!colleges.length) {
+      slidesWrapper.innerHTML = '<div class="error">No data available</div>';
+      controlsEl.style.display = "none";
+      return;
+    }
+
+    colleges.forEach((c, index) => {
+      const card = document.createElement("div");
+      card.className = "slide-card";
+      card.dataset.index = index;
+
+      card.innerHTML = `
+        <div class="slide-header">
+          <div>
+            <div class="rank-label">RANK</div>
+            <div class="rank-pill">#${c.rank || "—"}</div>
+          </div>
+          <div style="text-align:right; max-width:60%;">
+            <div class="college-name">${c.college_name || "—"}</div>
+            <div class="location-line">${c.city || "—"}, ${c.state || "—"}</div>
+          </div>
+        </div>
+
+        <div class="tag-row">
+          <span class="tag-pill">${c.category || "Category —"}</span>
+          <span class="tag-pill">City: ${c.city || "—"}</span>
+          <span class="tag-pill">State: ${c.state || "—"}</span>
+        </div>
+
+        <div class="score-box">
+          <div class="score-label">Score</div>
+          <div class="score-value">${c.score || "—"}</div>
+        </div>
+      `;
+
+      slidesWrapper.appendChild(card);
+
+      const dot = document.createElement("div");
+      dot.className = "dot";
+      dot.dataset.index = index;
+      dot.addEventListener("click", () => {
+        showSlide(index);
+        resetAutoAdvance();
+      });
+      dotsEl.appendChild(dot);
+    });
+
+    controlsEl.style.display = "flex";
+    showSlide(Math.min(currentIndex, colleges.length - 1));
+  }
+
+  function showSlide(index) {
+    if (!colleges.length) return;
+
+    if (index < 0) index = colleges.length - 1;
+    if (index >= colleges.length) index = 0;
+    currentIndex = index;
+
+    const cards = slidesWrapper.querySelectorAll(".slide-card");
+    cards.forEach(card => card.classList.remove("active"));
+    const currentCard = slidesWrapper.querySelector(`.slide-card[data-index="${index}"]`);
+    if (currentCard) currentCard.classList.add("active");
+
+    const dots = dotsEl.querySelectorAll(".dot");
+    dots.forEach(dot => dot.classList.remove("active"));
+    const currentDot = dotsEl.querySelector(`.dot[data-index="${index}"]`);
+    if (currentDot) currentDot.classList.add("active");
+
+    slideCountEl.textContent = `College ${index + 1} of ${colleges.length}`;
+  }
+
+  function nextSlide() {
+    showSlide(currentIndex + 1);
+  }
+
+  function prevSlide() {
+    showSlide(currentIndex - 1);
+  }
+
+  function resetAutoAdvance() {
+    if (autoTimer) clearInterval(autoTimer);
+    autoTimer = setInterval(() => {
+      nextSlide();
+    }, 8000); // auto-advance every 8s
+  }
+
+  prevBtn.addEventListener("click", () => {
+    prevSlide();
+    resetAutoAdvance();
+  });
+
+  nextBtn.addEventListener("click", () => {
+    nextSlide();
+    resetAutoAdvance();
+  });
+
+  async function fetchAndRender() {
     updatedEl.textContent = "Fetching latest data...";
     updatedEl.className = "";
 
     try {
       const response = await fetch(getFreshUrl(), {
         method: 'GET',
-        cache: 'no-store', // Prevent browser cache
+        cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache, must-revalidate' // Prevent proxy/CDN cache
+          'Cache-Control': 'no-cache, must-revalidate'
         }
       });
 
@@ -148,73 +455,79 @@
       const csvText = await response.text();
       const rows = parseCSV(csvText);
 
-      // Clear everything
-      headerRow.innerHTML = "";
-      bodyRows.innerHTML = "";
-
-      if (rows.length === 0) {
-        bodyRows.innerHTML = `<tr><td colspan="10">No data available</td></tr>`;
+      if (!rows.length) {
+        slidesWrapper.innerHTML = '<div class="error">No data available</div>';
+        controlsEl.style.display = "none";
         return;
       }
 
-      // Header
-      const headers = rows[0];
-      headers.forEach(h => {
-        const th = document.createElement("th");
-        th.textContent = h || "—";
-        headerRow.appendChild(th);
-      });
+      const headers = rows[0].map(normalizeHeader);
 
-      const rankColIndex = headers.findIndex(h => h.toLowerCase() === "rank");
+      const idx = {
+        rank: headers.indexOf("rank"),
+        college_name: headers.indexOf("college_name"),
+        city: headers.indexOf("city"),
+        state: headers.indexOf("state"),
+        category: headers.indexOf("category"),
+        score: headers.indexOf("score")
+      };
 
-      // Body rows
+      colleges = [];
+
       for (let i = 1; i < rows.length; i++) {
-        const rowData = rows[i];
-        if (rowData.length === 0 || rowData.every(cell => !cell)) continue; // skip empty
+        const row = rows[i];
+        if (!row || row.every(cell => !cell)) continue;
 
-        const tr = document.createElement("tr");
+        const get = key => {
+          const colIndex = idx[key];
+          return (colIndex >= 0 && row[colIndex] != null && row[colIndex] !== "") ? row[colIndex] : "";
+        };
 
-        // Highlight top 3
-        if (rankColIndex !== -1) {
-          const rank = parseInt(rowData[rankColIndex], 10);
-          if (rank === 1) tr.classList.add("rank-1");
-          else if (rank === 2) tr.classList.add("rank-2");
-          else if (rank === 3) tr.classList.add("rank-3");
-        }
-
-        rowData.forEach(cell => {
-          const td = document.createElement("td");
-          td.textContent = cell || "—";
-          tr.appendChild(td);
+        colleges.push({
+          rank: get("rank"),
+          college_name: get("college_name"),
+          city: get("city"),
+          state: get("state"),
+          category: get("category"),
+          score: get("score")
         });
-
-        bodyRows.appendChild(tr);
       }
 
-      // Remove loading row if still present
+      // Sort by numeric rank if available
+      colleges.sort((a, b) => {
+        const ra = parseInt(a.rank, 10);
+        const rb = parseInt(b.rank, 10);
+        if (isNaN(ra) && isNaN(rb)) return 0;
+        if (isNaN(ra)) return 1;
+        if (isNaN(rb)) return -1;
+        return ra - rb;
+      });
+
+      // Remove loading
       if (loadingEl) {
         loadingEl.remove();
       }
 
-      // Success update
+      buildSlides();
+      resetAutoAdvance();
+
       updatedEl.textContent = `Last updated: ${new Date().toLocaleString()}`;
-      updatedEl.className = "";
 
     } catch (err) {
       console.error("Fetch error:", err);
       updatedEl.textContent = "Error loading data – retrying...";
       updatedEl.className = "error";
-      bodyRows.innerHTML = `<tr><td colspan="10" class="error">Failed to load data. Retrying in 10s...</td></tr>`;
+      slidesWrapper.innerHTML = `<div class="error">Failed to load data. Retrying in 10s...</div>`;
     }
   }
 
   // Initial load
   fetchAndRender();
 
-  // Auto-refresh every 10 seconds (10000ms)
+  // Auto-refresh data every 10 seconds (keeps slideshow in sync with Sheet)
   setInterval(fetchAndRender, 10000);
 
-  // Optional: also refresh when page becomes visible again (e.g. after sleep/tab switch)
+  // Refresh when tab becomes visible again
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       fetchAndRender();
