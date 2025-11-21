@@ -52,72 +52,75 @@
   </table>
 
   <script>
-    const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vScqD__mUDS5xvRn7bj7njLOUcqYKEo3MHLjOSsOIv0wTh2GFvTXOcLl_34w6PirksSafr2u5Unj1IF/pub?gid=0&single=true&output=csv"; // <-- replace this
+  // Your published CSV link from Google Sheets
+  const SHEET_CSV_URL_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vScqD__mUDS5xvRn7bj7njLOUcqYKEo3MHLjOSsOIv0wTh2GFvTXOcLl_34w6PirksSafr2u5Unj1IF/pub?gid=0&single=true&output=csv"; // <-- keep your link here
 
-    async function fetchCSV() {
-      const res = await fetch(SHEET_CSV_URL);
-      const text = await res.text();
-      return text;
-    }
+  // Always add a timestamp to avoid caching: ?t=123456789
+  async function fetchCSV() {
+    const url = SHEET_CSV_URL_BASE + (SHEET_CSV_URL_BASE.includes("?") ? "&" : "?") + "t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    const text = await res.text();
+    return text;
+  }
 
-    function parseCSV(text) {
-      const rows = text.trim().split("\n").map(r => r.split(","));
-      return rows;
-    }
+  function parseCSV(text) {
+    const rows = text.trim().split("\n").map(r => r.split(","));
+    return rows;
+  }
 
-    function renderTable(rows) {
-      const headerRow = document.getElementById("header-row");
-      const bodyRows = document.getElementById("body-rows");
-      headerRow.innerHTML = "";
-      bodyRows.innerHTML = "";
+  function renderTable(rows) {
+    const headerRow = document.getElementById("header-row");
+    const bodyRows = document.getElementById("body-rows");
+    headerRow.innerHTML = "";
+    bodyRows.innerHTML = "";
 
-      if (rows.length === 0) return;
+    if (rows.length === 0) return;
 
-      const headers = rows[0];
-      headers.forEach(h => {
-        const th = document.createElement("th");
-        th.textContent = h;
-        headerRow.appendChild(th);
+    const headers = rows[0];
+    headers.forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      headerRow.appendChild(th);
+    });
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const tr = document.createElement("tr");
+
+      // Highlight top 3 by rank (assumes "rank" column exists)
+      const rankIndex = headers.indexOf("rank");
+      const rankValue = rankIndex !== -1 ? parseInt(row[rankIndex]) : null;
+      if (rankValue === 1) tr.classList.add("rank-1");
+      if (rankValue === 2) tr.classList.add("rank-2");
+      if (rankValue === 3) tr.classList.add("rank-3");
+
+      row.forEach(cell => {
+        const td = document.createElement("td");
+        td.textContent = cell;
+        tr.appendChild(td);
       });
-
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        const tr = document.createElement("tr");
-
-        // Optional: highlight top 3 ranks based on "rank" column (assumed index 1)
-        const rankIndex = headers.indexOf("rank");
-        const rankValue = rankIndex !== -1 ? parseInt(row[rankIndex]) : null;
-        if (rankValue === 1) tr.classList.add("rank-1");
-        if (rankValue === 2) tr.classList.add("rank-2");
-        if (rankValue === 3) tr.classList.add("rank-3");
-
-        row.forEach(cell => {
-          const td = document.createElement("td");
-          td.textContent = cell;
-          tr.appendChild(td);
-        });
-        bodyRows.appendChild(tr);
-      }
+      bodyRows.appendChild(tr);
     }
+  }
 
-    async function refresh() {
-      try {
-        const csvText = await fetchCSV();
-        const rows = parseCSV(csvText);
-        renderTable(rows);
-        document.getElementById("last-updated").textContent =
-          "Last fetched: " + new Date().toLocaleString();
-      } catch (err) {
-        console.error("Error fetching sheet:", err);
-        document.getElementById("last-updated").textContent =
-          "Error fetching data. Check console.";
-      }
+  async function refresh() {
+    try {
+      const csvText = await fetchCSV();
+      const rows = parseCSV(csvText);
+      renderTable(rows);
+      document.getElementById("last-updated").textContent =
+        "Last fetched: " + new Date().toLocaleString();
+    } catch (err) {
+      console.error("Error fetching sheet:", err);
+      document.getElementById("last-updated").textContent =
+        "Error fetching data. Check console.";
     }
+  }
 
-    // First load
-    refresh();
-    // Auto-refresh every 60 seconds
-    setInterval(refresh, 60000);
-  </script>
+  // First load
+  refresh();
+  // Auto-refresh every 10 seconds (10000 ms)
+  setInterval(refresh, 10000);
+</script>
 </body>
 </html>
