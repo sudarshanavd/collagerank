@@ -1,149 +1,218 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>College Rank List (Live)</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: 'Segoe UI', Arial, sans-serif;
       padding: 20px;
       background: #f5f7fb;
+      margin: 0;
     }
     h1 {
       margin-bottom: 5px;
+      color: #1a1a1a;
     }
     #last-updated {
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       color: #555;
-      margin-bottom: 15px;
+      margin-bottom: 20px;
+      font-weight: 500;
+    }
+    #loading {
+      color: #0066cc;
+      font-style: italic;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       background: white;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      border-radius: 8px;
+      overflow: hidden;
     }
     th, td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #eee;
+      padding: 12px 14px;
       text-align: left;
-      font-size: 0.95rem;
+      border-bottom: 1px solid #eee;
     }
     th {
       background: #eef2ff;
       font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
     }
     tr:nth-child(even) td {
       background: #fafbff;
     }
-    .rank-1 { background: #fff7d6; }
-    .rank-2 { background: #f0f9ff; }
-    .rank-3 { background: #f3f0ff; }
+    tr:hover td {
+      background: #f0f7ff;
+    }
+    .rank-1 { background: #fff7d6 !important; font-weight: bold; }
+    .rank-2 { background: #e6f7ff !important; }
+    .rank-3 { background: #f3e8ff !important; }
+    .error {
+      color: #d32f2f;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <h1>College Rank List (Live)</h1>
-  <div id="last-updated">Loading...</div>
+
+  <h1>College Rank List (Live Update)</h1>
+  <div id="updated">Loading live data...</div>
+
   <table id="rank-table">
-    <thead>
-      <tr id="header-row"></tr>
-    </thead>
-    <tbody id="body-rows"></tbody>
+    <thead><tr id="header-row"></tr></thead>
+    <tbody id="body-rows">
+      <tr><td colspan="10" id="loading">Fetching latest rankings...</td></tr>
+    </tbody>
   </table>
+
 <script>
-  // Your published CSV URL from Google Sheets
-  const SHEET_CSV_URL_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vScqD__mUDS5xvRn7bj7njLOUcqYKEo3MHLjOSsOIv0wTh2GFvTXOcLl_34w6PirksSafr2u5Unj1IF/pub?gid=0&single=true&output=csv"; // <-- put your real URL
+  // YOUR GOOGLE SHEETS PUBLISHED CSV URL (replace this!)
+  const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vScqD__mUDS5xvRn7bj7njLOUcqYKEo3MHLjOSsOIv0wTh2GFvTXOcLl_34w6PirksSafr2u5Unj1IF/pub?gid=0&single=true&output=csv";
 
-  async function fetchCSV() {
-    // Add timestamp to avoid browser cache
-    const url =
-      SHEET_CSV_URL_BASE +
-      (SHEET_CSV_URL_BASE.includes("?") ? "&" : "?") +
-      "t=" +
-      Date.now();
-
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error("HTTP " + res.status);
-    }
-    const text = await res.text();
-    return text;
+  // Super aggressive cache buster
+  function getFreshUrl() {
+    const url = new URL(SHEET_CSV_URL);
+    url.searchParams.set('nocache', Date.now());
+    url.searchParams.set('ts', new Date().getTime());
+    return url.toString();
   }
 
+  // Better CSV parser that handles quoted fields with commas
   function parseCSV(text) {
-    // Split into lines, remove completely empty ones
-    const lines = text
-      .split(/\r?\n/)
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
+    const rows = [];
+    const lines = text.split(/\r?\n/);
 
-    // Split each line into cells by comma (simple CSV)
-    const rows = lines.map(line => line.split(","));
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+
+      const row = [];
+      let field = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const nextChar = line[i + 1];
+
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            field += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          row.push(field.trim());
+          field = '';
+        } else {
+          field += char;
+        }
+      }
+      row.push(field.trim());
+      if (row.length > 0 && row.some(cell => cell !== '')) {
+        rows.push(row);
+      }
+    }
     return rows;
   }
 
-  function renderTable(rows) {
-    const headerRowEl = document.getElementById("header-row");
-    const bodyRowsEl = document.getElementById("body-rows");
+  async function fetchAndRender() {
+    const updatedEl = document.getElementById("updated");
+    const loadingEl = document.getElementById("loading");
+    const headerRow = document.getElementById("header-row");
+    const bodyRows = document.getElementById("body-rows");
 
-    // 🔥 Always clear old content completely
-    headerRowEl.innerHTML = "";
-    bodyRowsEl.innerHTML = "";
+    try {
+      updatedEl.textContent = "Fetching latest data...";
+      updatedEl.className = "";
 
-    if (!rows || rows.length === 0) return;
-
-    const headers = rows[0];
-
-    // Build header
-    headers.forEach(h => {
-      const th = document.createElement("th");
-      th.textContent = h;
-      headerRowEl.appendChild(th);
-    });
-
-    const rankIndex = headers.indexOf("rank");
-
-    // Build body
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      const tr = document.createElement("tr");
-
-      // Highlight top 3 if rank column exists
-      if (rankIndex !== -1) {
-        const rankValue = parseInt(row[rankIndex], 10);
-        if (rankValue === 1) tr.classList.add("rank-1");
-        if (rankValue === 2) tr.classList.add("rank-2");
-        if (rankValue === 3) tr.classList.add("rank-3");
-      }
-
-      row.forEach(cell => {
-        const td = document.createElement("td");
-        td.textContent = cell;
-        tr.appendChild(td);
+      const response = await fetch(getFreshUrl(), {
+        method: 'GET',
+        cache: 'no-store',           // Prevent browser cache
+        'no-cache',             // Prevent proxy cache
+        'must-revalidate'
       });
 
-      bodyRowsEl.appendChild(tr);
-    }
-  }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-  async function refresh() {
-    try {
-      const csvText = await fetchCSV();
+      const csvText = await response.text();
       const rows = parseCSV(csvText);
-      renderTable(rows);
-      document.getElementById("last-updated").textContent =
-        "Last fetched: " + new Date().toLocaleString();
+
+      // Clear everything
+      headerRow.innerHTML = "";
+      bodyRows.innerHTML = "";
+
+      if (rows.length === 0) {
+        bodyRows.innerHTML = `<tr><td colspan="10">No data available</td></tr>`;
+        return;
+      }
+
+      // Header
+      const headers = rows[0];
+      headers.forEach(h => {
+        const th = document.createElement("th");
+        th.textContent = h || "—";
+        headerRow.appendChild(th);
+      });
+
+      const rankColIndex = headers.findIndex(h => h.toLowerCase() === "rank");
+
+      // Body rows
+      for (let i = 1; i < rows.length; i++) {
+        const rowData = rows[i];
+        if (rowData.length === 0 || rowData.every(cell => !cell)) continue; // skip empty
+
+        const tr = document.createElement("tr");
+
+        // Highlight top 3
+        if (rankColIndex !== -1) {
+          const rank = parseInt(rowData[rankColIndex], 10);
+          if (rank === 1) tr.classList.add("rank-1");
+          else if (rank === 2) tr.classList.add("rank-2");
+          else if (rank === 3) tr.classList.add("rank-3");
+        }
+
+        rowData.forEach(cell => {
+          const td = document.createElement("td");
+          td.textContent = cell || "—";
+          tr.appendChild(td);
+        });
+
+        bodyRows.appendChild(tr);
+      }
+
+      // Success update
+      updatedEl.textContent = `Last updated: ${new Date().toLocaleString()}`;
+      updatedEl.className = "";
+
     } catch (err) {
-      console.error("Error fetching sheet:", err);
-      document.getElementById("last-updated").textContent =
-        "Error fetching data (see console).";
+      console.error("Fetch error:", err);
+      updatedEl.textContent = "Error loading data – retrying...";
+      updatedEl.className = "error";
+      bodyRows.innerHTML = `<tr><td colspan="10" class="error">Failed to load data. Retrying in 10s...</td></tr>`;
     }
   }
 
-  // First load
-  refresh();
-  // Auto-refresh every 10 seconds (change if you want)
-  setInterval(refresh, 10000);
+  // Initial load
+  fetchAndRender();
+
+  // Auto-refresh every 10 seconds (10000ms)
+  setInterval(fetchAndRender, 10000);
+
+  // Optional: also refresh when page becomes visible again (e.g. after sleep/tab switch)
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      fetchAndRender();
+    }
+  });
 </script>
+
 </body>
 </html>
