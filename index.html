@@ -47,14 +47,18 @@
     /* Slideshow layout */
 
     .slideshow-container {
-      position: relative;
+      /* position: relative;
       max-width: 900px;
-      width: 100%;
+      width: 100%; */
       flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      width: 280px;
+    height: 180px;
+  box-sizing: border-box;
+  display: flex;
     }
 
     .slide-card {
@@ -270,269 +274,161 @@
   // YOUR GOOGLE SHEETS PUBLISHED CSV URL
   const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vScqD__mUDS5xvRn7bj7njLOUcqYKEo3MHLjOSsOIv0wTh2GFvTXOcLl_34w6PirksSafr2u5Unj1IF/pub?gid=0&single=true&output=csv";
 
-  // Super aggressive cache buster
-  function getFreshUrl() {
-    const url = new URL(SHEET_CSV_URL);
-    url.searchParams.set('nocache', Date.now());
-    url.searchParams.set('ts', new Date().getTime());
-    return url.toString();
+  async function fetchCSV() {
+    // Add timestamp to avoid cache
+    const url =
+      SHEET_CSV_URL_BASE +
+      (SHEET_CSV_URL_BASE.includes("?") ? "&" : "?") +
+      "t=" +
+      Date.now();
+
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status);
+    }
+    const text = await res.text();
+    return text;
   }
 
-  // Better CSV parser that handles quoted fields with commas
   function parseCSV(text) {
-    const rows = [];
-    const lines = text.split(/\r?\n/);
+    const lines = text
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
 
-    for (let line of lines) {
-      line = line.trim();
-      if (!line) continue;
-
-      const row = [];
-      let field = '';
-      let inQuotes = false;
-
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        const nextChar = line[i + 1];
-
-        if (char === '"') {
-          if (inQuotes && nextChar === '"') {
-            field += '"';
-            i++;
-          } else {
-            inQuotes = !inQuotes;
-          }
-        } else if (char === ',' && !inQuotes) {
-          row.push(field.trim());
-          field = '';
-        } else {
-          field += char;
-        }
-      }
-      row.push(field.trim());
-      if (row.length > 0 && row.some(cell => cell !== '')) {
-        rows.push(row);
-      }
-    }
+    const rows = lines.map(line => line.split(","));
     return rows;
   }
 
-  // Normalize header names to match: rank, college_name, city, state, category, score
-  function normalizeHeader(h) {
-    return h.toLowerCase().trim().replace(/\s+/g, "_");
-  }
+  // --- NEW: group by school/college name and assign rank by score ---
+  function transformData(rows) {
+    if (!rows || rows.length === 0) return rows;
 
-  const updatedEl = document.getElementById("updated");
-  const loadingEl = document.getElementById("loading");
-  const slidesWrapper = document.getElementById("slides-wrapper");
-  const controlsEl = document.getElementById("controls");
-  const dotsEl = document.getElementById("dots");
-  const slideCountEl = document.getElementById("slide-count");
-  const prevBtn = document.getElementById("prev-btn");
-  const nextBtn = document.getElementById("next-btn");
+    const headers = rows[0];
 
-  let colleges = [];  // { rank, college_name, city, state, category, score }
-  let currentIndex = 0;
-  let autoTimer = null;
+    // Try to find name and score columns
+    const nameIndex =
+      headers.indexOf("college_name") !== -1
+        ? headers.indexOf("college_name")
+        : headers.indexOf("school_name"); // fallback if header is school_name
+    const scoreIndex = headers.indexOf("score");
+    const rankIndex = headers.indexOf("rank");
 
-  function buildSlides() {
-    slidesWrapper.innerHTML = "";
-    dotsEl.innerHTML = "";
-
-    if (!colleges.length) {
-      slidesWrapper.innerHTML = '<div class="error">No data available</div>';
-      controlsEl.style.display = "none";
-      return;
+    if (nameIndex === -1 || scoreIndex === -1) {
+      // If headers are missing, just return original
+      return rows;
     }
 
-    colleges.forEach((c, index) => {
-      const card = document.createElement("div");
-      card.className = "slide-card";
-      card.dataset.index = index;
+    // Group rows by name and sum scores
+    const groups = new Map();
 
-      card.innerHTML = `
-        <div class="slide-header">
-          <div>
-            <div class="rank-label">RANK</div>
-            <div class="rank-pill">#${c.rank || "—"}</div>
-          </div>
-          <div style="text-align:right; max-width:60%;">
-            <div class="college-name">${c.college_name || "—"}</div>
-            <div class="location-line">${c.city || "—"}, ${c.state || "—"}</div>
-          </div>
-        </div>
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const name = row[nameIndex];
+      const rawScore = row[scoreIndex];
+      const score = parseFloat(rawScore || "0") || 0;
 
-        <div class="tag-row">
-          <span class="tag-pill">${c.category || "Category —"}</span>
-          <span class="tag-pill">City: ${c.city || "—"}</span>
-          <span class="tag-pill">State: ${c.state || "—"}</span>
-        </div>
+      if (!name) continue;
 
-        <div class="score-box">
-          <div class="score-label">Score</div>
-          <div class="score-value">${c.score || "—"}</div>
-        </div>
-      `;
+      if (!groups.has(name)) {
+        // Clone row so we don't mutate original
+        const baseRow = [...row];
+        baseRow[scoreIndex] = score; // ensure numeric
+        groups.set(name, {
+          row: baseRow,
+          totalScore: score
+        });
+      } else {
+        const entry = groups.get(name);
+        entry.totalScore += score;
+        entry.row[scoreIndex] = entry.totalScore;
+        groups.set(name, entry);
+      }
+    }
 
-      slidesWrapper.appendChild(card);
+    // Convert to array for sorting
+    const aggregated = Array.from(groups.values());
 
-      const dot = document.createElement("div");
-      dot.className = "dot";
-      dot.dataset.index = index;
-      dot.addEventListener("click", () => {
-        showSlide(index);
-        resetAutoAdvance();
-      });
-      dotsEl.appendChild(dot);
+    // Sort descending by totalScore
+    aggregated.sort((a, b) => b.totalScore - a.totalScore);
+
+    // Build final rows array: headers + ranked rows
+    const finalRows = [headers];
+
+    aggregated.forEach((entry, idx) => {
+      const row = [...entry.row];
+      if (rankIndex !== -1) {
+        row[rankIndex] = idx + 1; // rank 1..N
+      }
+      finalRows.push(row);
     });
 
-    controlsEl.style.display = "flex";
-    showSlide(Math.min(currentIndex, colleges.length - 1));
+    return finalRows;
   }
 
-  function showSlide(index) {
-    if (!colleges.length) return;
+  function renderTable(rows) {
+    const headerRowEl = document.getElementById("header-row");
+    const bodyRowsEl = document.getElementById("body-rows");
 
-    if (index < 0) index = colleges.length - 1;
-    if (index >= colleges.length) index = 0;
-    currentIndex = index;
+    // Clear old content
+    headerRowEl.innerHTML = "";
+    bodyRowsEl.innerHTML = "";
 
-    const cards = slidesWrapper.querySelectorAll(".slide-card");
-    cards.forEach(card => card.classList.remove("active"));
-    const currentCard = slidesWrapper.querySelector(`.slide-card[data-index="${index}"]`);
-    if (currentCard) currentCard.classList.add("active");
+    if (!rows || rows.length === 0) return;
 
-    const dots = dotsEl.querySelectorAll(".dot");
-    dots.forEach(dot => dot.classList.remove("active"));
-    const currentDot = dotsEl.querySelector(`.dot[data-index="${index}"]`);
-    if (currentDot) currentDot.classList.add("active");
+    const headers = rows[0];
 
-    slideCountEl.textContent = `College ${index + 1} of ${colleges.length}`;
+    // Build header
+    headers.forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      headerRowEl.appendChild(th);
+    });
+
+    const rankIndex = headers.indexOf("rank");
+
+    // Build body
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const tr = document.createElement("tr");
+
+      // Highlight top 3 if rank column exists
+      if (rankIndex !== -1) {
+        const rankValue = parseInt(row[rankIndex], 10);
+        if (rankValue === 1) tr.classList.add("rank-1");
+        if (rankValue === 2) tr.classList.add("rank-2");
+        if (rankValue === 3) tr.classList.add("rank-3");
+      }
+
+      row.forEach(cell => {
+        const td = document.createElement("td");
+        td.textContent = cell;
+        tr.appendChild(td);
+      });
+
+      bodyRowsEl.appendChild(tr);
+    }
   }
 
-  function nextSlide() {
-    showSlide(currentIndex + 1);
-  }
-
-  function prevSlide() {
-    showSlide(currentIndex - 1);
-  }
-
-  function resetAutoAdvance() {
-    if (autoTimer) clearInterval(autoTimer);
-    autoTimer = setInterval(() => {
-      nextSlide();
-    }, 2000); // auto-advance every 8s
-  }
-
-  prevBtn.addEventListener("click", () => {
-    prevSlide();
-    resetAutoAdvance();
-  });
-
-  nextBtn.addEventListener("click", () => {
-    nextSlide();
-    resetAutoAdvance();
-  });
-
-  async function fetchAndRender() {
-    updatedEl.textContent = "Fetching latest data...";
-    updatedEl.className = "";
-
+  async function refresh() {
     try {
-      const response = await fetch(getFreshUrl(), {
-        method: 'GET',
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, must-revalidate'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const csvText = await response.text();
+      const csvText = await fetchCSV();
       const rows = parseCSV(csvText);
-
-      if (!rows.length) {
-        slidesWrapper.innerHTML = '<div class="error">No data available</div>';
-        controlsEl.style.display = "none";
-        return;
-      }
-
-      const headers = rows[0].map(normalizeHeader);
-
-      const idx = {
-        rank: headers.indexOf("rank"),
-        college_name: headers.indexOf("college_name"),
-        city: headers.indexOf("city"),
-        state: headers.indexOf("state"),
-        category: headers.indexOf("category"),
-        score: headers.indexOf("score")
-      };
-
-      colleges = [];
-
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row || row.every(cell => !cell)) continue;
-
-        const get = key => {
-          const colIndex = idx[key];
-          return (colIndex >= 0 && row[colIndex] != null && row[colIndex] !== "") ? row[colIndex] : "";
-        };
-
-        colleges.push({
-          rank: get("rank"),
-          college_name: get("college_name"),
-          city: get("city"),
-          state: get("state"),
-          category: get("category"),
-          score: get("score")
-        });
-      }
-
-      // Sort by numeric rank if available
-      colleges.sort((a, b) => {
-        const ra = parseInt(a.rank, 10);
-        const rb = parseInt(b.rank, 10);
-        if (isNaN(ra) && isNaN(rb)) return 0;
-        if (isNaN(ra)) return 1;
-        if (isNaN(rb)) return -1;
-        return ra - rb;
-      });
-
-      // Remove loading
-      if (loadingEl) {
-        loadingEl.remove();
-      }
-
-      buildSlides();
-      resetAutoAdvance();
-
-      updatedEl.textContent = `Last updated: ${new Date().toLocaleString()}`;
-
+      const transformed = transformData(rows); // <-- use grouped + ranked data
+      renderTable(transformed);
+      document.getElementById("last-updated").textContent =
+        "Last fetched: " + new Date().toLocaleString();
     } catch (err) {
-      console.error("Fetch error:", err);
-      updatedEl.textContent = "Error loading data – retrying...";
-      updatedEl.className = "error";
-      slidesWrapper.innerHTML = `<div class="error">Failed to load data. Retrying in 10s...</div>`;
+      console.error("Error fetching sheet:", err);
+      document.getElementById("last-updated").textContent =
+        "Error fetching data (see console).";
     }
   }
 
-  // Initial load
-  fetchAndRender();
-
-  // Auto-refresh data every 10 seconds (keeps slideshow in sync with Sheet)
-  setInterval(fetchAndRender, 10000);
-
-  // Refresh when tab becomes visible again
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-      fetchAndRender();
-    }
-  });
+  // First load
+  refresh();
+  // Auto-refresh every 10 seconds
+  setInterval(refresh, 10000);
 </script>
 
 </body>
