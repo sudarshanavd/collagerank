@@ -47,14 +47,13 @@
     /* Slideshow layout */
 
     .slideshow-container {
+      width: 580px;
+      height: 250px;
       position: relative;
-      max-width: 900px;
-      width: 100%;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      margin: 30px auto;
+      overflow: hidden;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
     }
 
     .slide-card {
@@ -252,9 +251,9 @@
 
   <h1>College Rank List – Slide View</h1>
   <div id="updated">Loading live data...</div>
+  <div id="loading">Fetching latest rankings...</div>
 
   <div class="slideshow-container">
-    <div id="loading">Fetching latest rankings...</div>
 
     <!-- Slide cards will be injected here -->
     <div id="slides-wrapper"></div>
@@ -357,7 +356,7 @@
           const existing = map.get(name);
           existing.score += score;
         } else {
-          map.set(name, { name, location, score });
+          map.set(name, { name, city,state, score });
         }
       }
 
@@ -430,7 +429,8 @@
           <div class="rank-pill">#${college.rank}</div>
         </div>
         <div class="college-name">${college.name}</div>
-        <div class="location-line">${college.location}</div>
+        <div class="location-line">${college.city}</div>
+        <div class="location-line">${college.state}</div>
         <div class="score-box">
           <span class="score-label">Score</span>
           <span class="score-value">${college.score.toFixed(1)}</span>
@@ -472,10 +472,10 @@
   document.getElementById("prev-btn").onclick = () => showSlide(currentSlide - 1);
 
   // Auto-advance slides every 4 seconds
-  setInterval(() => showSlide(currentSlide + 1), 4000);
+  setInterval(() => showSlide(currentSlide + 1), 2000);
 
   // Refresh data every 30 seconds
-  setInterval(fetchData, 30000);
+  setInterval(fetchData, 10000);
 
   // Initial load
   fetchData();
