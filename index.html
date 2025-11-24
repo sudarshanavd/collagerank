@@ -271,76 +271,168 @@
   </div>
 
 <script>
-  // PASTE YOUR PUBLISHED GOOGLE SHEET CSV URL HERE
+  // PASTE YOUR PUBLISHED GOOGLE SHEET CSV URL HERE (must end with output=csv)
   const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vScqD__mUDS5xvRn7bj7njLOUcqYKEo3MHLjOSsOIv0wTh2GFvTXOcLl_34w6PirksSafr2u5Unj1IF/pub?gid=0&single=true&output=csv";
 
   let colleges = [];
   let currentSlide = 0;
 
+  // Sample fallback data for testing (remove after fixing URL)
+  const SAMPLE_DATA = [
+    { name: "Harvard University", location: "Cambridge, MA", score: 98.5 },
+    { name: "Stanford University", location: "Stanford, CA", score: 97.2 },
+    { name: "MIT", location: "Cambridge, MA", score: 96.8 },
+    { name: "Yale University", location: "New Haven, CT", score: 95.1 },
+    { name: "Princeton University", location: "Princeton, NJ", score: 94.3 }
+  ];
+
   async function fetchData() {
+    const loadingEl = document.getElementById("loading");
+    const updatedEl = document.getElementById("updated");
+    loadingEl.textContent = "Fetching latest rankings...";
+    loadingEl.style.display = "block";
+    loadingEl.className = ""; // Reset error class
+
     try {
-      const response = await fetch(SHEET_CSV_URL + "?t=" + Date.now());
+      console.log("Fetching from:", SHEET_CSV_URL);
+      const response = await fetch(SHEET_CSV_URL + "&t=" + Date.now(), { 
+        method: 'GET',
+        mode: 'cors', // Explicit CORS mode
+        cache: 'no-cache'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const text = await response.text();
-      const rows = text.split('\n').map(row => row.split(',').map(cell => cell.trim().replace(/^"|"$/g, '')));
-      
-      if (rows.length < 2) throw new Error("No data");
+      console.log("Raw CSV (first 200 chars):", text.substring(0, 200));
+
+      if (!text || text.trim().length === 0) {
+        throw new Error("Empty response from sheet");
+      }
+
+      // Improved CSV parsing (handles quoted fields better)
+      const rows = parseCSV(text);
+      console.log("Parsed rows:", rows.length);
+
+      if (rows.length < 2) {
+        throw new Error("No data rows found (need at least headers + 1 row)");
+      }
 
       const headers = rows[0];
-      const nameCol = headers.findIndex(h => h.toLowerCase().includes('college') || h.toLowerCase().includes('school'));
+      console.log("Headers found:", headers);
+
+      // Flexible column detection
+      const nameCol = headers.findIndex(h => 
+        h.toLowerCase().includes('college') || h.toLowerCase().includes('school') || h.toLowerCase().includes('name')
+      );
       const scoreCol = headers.findIndex(h => h.toLowerCase().includes('score'));
-      const locationCol = headers.findIndex(h => h.toLowerCase().includes('location') || h.toLowerCase().includes('city'));
+      const locationCol = headers.findIndex(h => 
+        h.toLowerCase().includes('location') || h.toLowerCase().includes('city') || h.toLowerCase().includes('state')
+      );
+
+      console.log("Column indices - Name:", nameCol, "Score:", scoreCol, "Location:", locationCol);
+
+      if (nameCol === -1 || scoreCol === -1) {
+        throw new Error(`Missing required columns. Found headers: ${headers.join(', ')}. Need 'college_name' or 'score'.`);
+      }
 
       const map = new Map();
 
       // Group by college name and sum scores
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
-        if (!row[nameCol]) continue;
-        const name = row[nameCol];
-        const score = parseFloat(row[scoreCol]) || 0;
-        const location = row[locationCol] || "Location not available";
+        if (row.length === 0 || !row[nameCol]) continue;
+        
+        const name = row[nameCol].trim();
+        const rawScore = row[scoreCol] ? row[scoreCol].trim() : "0";
+        const score = parseFloat(rawScore) || 0;
+        const location = locationCol !== -1 ? (row[locationCol] || "N/A").trim() : "Location not available";
+
+        if (!name) continue;
 
         if (map.has(name)) {
-          map.get(name).score += score;
+          const existing = map.get(name);
+          existing.score += score;
         } else {
           map.set(name, { name, location, score });
         }
       }
 
-      // Convert to array, sort by score descending
+      if (map.size === 0) {
+        throw new Error("No valid colleges found in data");
+      }
+
+      // Convert to array, sort by score descending, rank
       colleges = Array.from(map.values())
         .sort((a, b) => b.score - a.score)
-        .slice(0, 50); // Top 50 only (optional)
+        .map((college, index) => ({ ...college, rank: index + 1 }))
+        .slice(0, 20); // Limit to top 20 for performance
+
+      console.log("Processed colleges:", colleges);
 
       renderSlides();
-      updateDate();
-      document.getElementById("loading").style.display = "none";
+      updatedEl.textContent = `Last updated: ${new Date().toLocaleString()} (${colleges.length} colleges ranked)`;
+      loadingEl.style.display = "none";
       document.getElementById("controls").style.display = "flex";
       showSlide(currentSlide);
 
     } catch (err) {
-      document.getElementById("loading").textContent = "Error loading data";
-      document.getElementById("loading").className = "error";
-      console.error(err);
+      console.error("Fetch error:", err);
+      loadingEl.textContent = `Error: ${err.message}. Check console for details. Using sample data for demo.`;
+      loadingEl.className = "error";
+      
+      // Fallback to sample data for testing
+      colleges = SAMPLE_DATA.map((college, index) => ({ ...college, rank: index + 1 }));
+      renderSlides();
+      document.getElementById("controls").style.display = "flex";
+      showSlide(currentSlide);
+      updatedEl.textContent = "Using demo data (fix URL to load real rankings)";
     }
+  }
+
+  // Improved CSV parser (handles basic quoting)
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+    const rows = [];
+    for (let line of lines) {
+      const row = [];
+      let field = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          row.push(field.trim());
+          field = '';
+        } else {
+          field += char;
+        }
+      }
+      row.push(field.trim()); // Last field
+      rows.push(row);
+    }
+    return rows;
   }
 
   function renderSlides() {
     const wrapper = document.getElementById("slides-wrapper");
     wrapper.innerHTML = "";
 
-    colleges.forEach((college, index) => {
+    colleges.forEach((college) => {
       const slide = document.createElement("div");
       slide.className = "slide-card";
       slide.innerHTML = `
         <div class="slide-header">
-          <div class="rank-pill">#${index + 1}</div>
+          <div class="rank-pill">#${college.rank}</div>
         </div>
         <div class="college-name">${college.name}</div>
         <div class="location-line">${college.location}</div>
         <div class="score-box">
-          <div class="score-label">Total Score</div>
-          <div class="score-value">${college.score.toFixed(1)}</div>
+          <span class="score-label">Score</span>
+          <span class="score-value">${college.score.toFixed(1)}</span>
         </div>
       `;
       wrapper.appendChild(slide);
@@ -351,46 +443,37 @@
     dotsContainer.innerHTML = "";
     colleges.forEach((_, i) => {
       const dot = document.createElement("div");
-      dot.className = "dot";
-      if (i === 0) dot.classList.add("active");
+      dot.className = "dot" + (i === 0 ? " active" : "");
       dot.onclick = () => showSlide(i);
       dotsContainer.appendChild(dot);
     });
+
+    // Update slide count if you added it
+    const slideCountEl = document.getElementById("slide-count");
+    if (slideCountEl) slideCountEl.textContent = `${currentSlide + 1} / ${colleges.length}`;
   }
 
   function showSlide(n) {
     const slides = document.querySelectorAll(".slide-card");
     const dots = document.querySelectorAll(".dot");
 
-    if (n >= slides.length) currentSlide = 0;
-    if (n < 0) currentSlide = slides.length - 1;
+    currentSlide = (n + colleges.length) % colleges.length; // Loop safely
 
-    slides.forEach((s, i) => {
-      s.classList.toggle("active", i === currentSlide);
-    });
+    slides.forEach((s, i) => s.classList.toggle("active", i === currentSlide));
+    dots.forEach((d, i) => d.classList.toggle("active", i === currentSlide));
 
-    dots.forEach((d, i) => {
-      d.classList.toggle("active", i === currentSlide);
-    });
-
-    currentSlide = n >= 0 ? n : currentSlide;
-  }
-
-  function updateDate() {
-    document.getElementById("updated").textContent = 
-      "Last updated: " + new Date().toLocaleString();
+    const slideCountEl = document.getElementById("slide-count");
+    if (slideCountEl) slideCountEl.textContent = `${currentSlide + 1} / ${colleges.length}`;
   }
 
   // Navigation
   document.getElementById("next-btn").onclick = () => showSlide(currentSlide + 1);
   document.getElementById("prev-btn").onclick = () => showSlide(currentSlide - 1);
 
-  // Auto-play (optional)
-  setInterval(() => {
-    showSlide(currentSlide + 1);
-  }, 5000);
+  // Auto-advance slides every 4 seconds
+  setInterval(() => showSlide(currentSlide + 1), 4000);
 
-  // Auto-refresh data every 30 seconds
+  // Refresh data every 30 seconds
   setInterval(fetchData, 30000);
 
   // Initial load
